@@ -5,8 +5,8 @@ namespace rpc
 {
     namespace config
     {
-        static constexpr int LATEST_VERSION = 0;
-        static constexpr auto DEFAULT_URL = "http://boomlings.com";
+        static constexpr int LATEST_VERSION = 1;
+        static constexpr auto DEFAULT_URL = "http://www.boomlings.com";
         static constexpr auto DEFAULT_PREFIX = "/database/";
         constexpr auto DEFAULT_APPLICATION_ID = "668228366893056001";
 

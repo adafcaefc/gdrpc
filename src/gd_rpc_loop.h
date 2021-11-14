@@ -105,4 +105,3 @@ namespace rpc
         static DWORD WINAPI main_thread(LPVOID lpParam);
     };
 }
-

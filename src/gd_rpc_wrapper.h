@@ -1,5 +1,4 @@
 #pragma once
-
 #include <discord_rpc.h>
 #include <ctime>
 #include <cstring>

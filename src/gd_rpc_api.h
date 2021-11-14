@@ -77,15 +77,13 @@ namespace rpc
 
         gd_urls urls;
 
-        std::shared_ptr<httplib::Client> client;
-
-        // makes an internet post request to boomlings.com
-        std::string post_request(std::string, params&);
-
+        std::string post_request(
+            const std::string& endpoint,
+            params& my_params);
     public:
         gd_client(
-            const std::string& host   = "http://boomlings.com",
-            const std::string& prefix = "/database/");
+            const std::string& host,
+            const std::string& prefix);
 
         bool get_user_info(const int account_id, gd_user& user);
         bool get_player_info(const int player_id, gd_user& user);

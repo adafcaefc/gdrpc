@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "gd_rpc_loop.h"
+#include "gd_rpc_log.h"
 #include "../gdhook/minhook_wrapper.h"
 
 namespace rpc
@@ -116,7 +117,7 @@ namespace rpc
     {
         o_LevelEditorLayer_removeSpecial(__this, object);
         auto new_object_count = *offset_from_base<int>(__this, 0x3A0);
-        if (loop::get()->get_game_level()->objectCount < new_object_count) return; // this should hopefully prevent spam upon level loading
+        if (loop::get()->get_game_level()->objectCount < new_object_count) return; // this should hopefully prevent spam upon level exiting
         fix_object_count(__this, loop::get()->get_game_level());
         loop::get()->set_update_presence(true);
     }
@@ -135,7 +136,7 @@ namespace rpc
         }
         catch (const std::exception& e) 
         {
-            // error
+            GDRPC_LOG_ERROR("[GDRPC] failed to initialize config, {}", e.what());
             return;
         }
 
@@ -145,8 +146,11 @@ namespace rpc
         HMODULE cocos_handle = LoadLibraryA("libcocos2d.dll");
 
         // close button calls this, x button calls wndproc
-        if (!gd_handle) return;    
-        if (!cocos_handle) return;
+        if (!gd_handle || !cocos_handle)
+        {
+            GDRPC_LOG_ERROR("[GDRPC] failed to get module handle");
+            return;
+        }
         
         // setup closes
         oWindowProc = SetWindowLongPtrA(GetForegroundWindow(), GWL_WNDPROC, (LONG_PTR)nWindowProc);

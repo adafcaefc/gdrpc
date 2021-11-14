@@ -1,56 +1,13 @@
 #include "pch.h"
 #include "gd_rpc_api.h"
-#define CURL_STATICLIB
-#include <curl/curl.h>
+#include "gd_rpc_curl_utils.h"
+#include "gd_rpc_config.h"
+#include "gd_rpc_log.h"
 #include <gd.h>
 #undef snprintf
 
 namespace rpc
 {
-    static std::string _unsafe_post_http_request(
-        const char* url,
-        const char* fields)
-    {
-        std::string response_string;
-        auto curl = curl_easy_init();
-
-        if (!curl) return response_string;
-
-        struct curl_slist* headers = NULL;
-        headers = curl_slist_append(headers, "Accept: */*");
-        headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
-        headers = curl_slist_append(headers, "User-Agent: ");
-
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-        curl_easy_setopt(curl, CURLOPT_URL, url);
-        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
-        curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 50L);
-        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
-        curl_easy_setopt(curl, CURLOPT_POST, 1);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, fields);
-
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
-
-        std::string header_string;
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_function);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_string);
-        curl_easy_setopt(curl, CURLOPT_HEADERDATA, &header_string);
-
-        char* _url;
-        long response_code;
-        double elapsed;
-
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
-        curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &elapsed);
-        curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &_url);
-
-        curl_easy_perform(curl);
-        curl_easy_cleanup(curl);
-
-        return response_string;
-    }
-
     gdx::demon gd_client::get_demon_difficulty_value(const int difficulty)
     {
         switch (difficulty)
@@ -74,7 +31,7 @@ namespace rpc
     std::string gd_client::get_difficulty_name(gd_level& level) 
     {
         if (level.is_auto) return "auto";
-        
+
         if (level.is_demon) 
         {
             switch (level.demon_difficulty) 
@@ -121,27 +78,28 @@ namespace rpc
         , host(host)
         , prefix(prefix)
     {
-        client = std::make_shared<httplib::Client>(host.c_str());
+
     }
 
-    std::string gd_client::post_request(std::string url, params& params)
+    std::string gd_client::post_request(
+        const std::string& endpoint, 
+        params& my_params)
     {
-        try
+        const auto params_to_string = [](params& all_params)-> std::string
         {
-            params.emplace("gameVersion", std::to_string(game_version));
-            params.emplace("secret", secret);
-
-            std::string full_url = prefix + url;
-
-            auto res = client.get()->Post(full_url.c_str(), params);
-            auto body = res->body;
-
-            return body;
-        }
-        catch (...)
-        {
-            return "-1";
-        }
+            std::string buffer;
+            for (auto& param : all_params)
+            {
+                buffer.append(fmt::format("{}={}&", param.first, param.second));
+            }
+            if (!buffer.empty()) buffer.pop_back();
+            return buffer;
+        };
+        my_params.emplace("gameVersion", std::to_string(game_version));
+        my_params.emplace("secret", secret);
+        const auto result = post_http_request(host + prefix + endpoint, params_to_string(my_params));
+        if (result.empty()) return std::string("-1");
+        return result;
     }
 
     bool gd_client::get_user_info(
@@ -161,8 +119,7 @@ namespace rpc
         }
         catch (const std::exception& e) 
         {
-            // throw the exceptions that will actually have a message
-            // throw e;
+            GDRPC_LOG_ERROR("[GDRPC] failed to get user info, {}", e.what());
         }
         return false;
     }
@@ -177,14 +134,14 @@ namespace rpc
         try 
         {
             auto user_map = to_robtop(player_string);
-
             user.name = user_map.at(1);
             user.id = std::stoi(user_map.at(2), nullptr);
             user.account_id = std::stoi(user_map.at(16), nullptr);
             return true;
         }
-        catch (const std::exception& e) {
-            //throw e;
+        catch (const std::exception& e) 
+        {
+            GDRPC_LOG_ERROR("[GDRPC] failed to get player info, {}", e.what());
         }
         return false;
     }
@@ -207,15 +164,9 @@ namespace rpc
 
         if (!found_user)
         {
-            // hey look its the checks
-            // so basically you look for
-            // :16:<id>:
             std::string lookup_string = ":16:" + std::to_string(user.account_id) + ":";
-            auto player_entry =
-                std::find_if(leaderboard_list.begin(), leaderboard_list.end(),
-                    [&lookup_string](std::string& entry) {
-                        return (entry.find(lookup_string) != std::string::npos);
-                    });
+            const auto routine = [&lookup_string](std::string& entry) { return (entry.find(lookup_string) != std::string::npos); };
+            auto player_entry = std::find_if(leaderboard_list.begin(), leaderboard_list.end(), routine);
             if (player_entry == leaderboard_list.end()) user.rank = -1;
             seglist = to_robtop(*player_entry);
         }
@@ -275,23 +226,32 @@ namespace rpc
     {
         std::stringstream segments(string);
         std::string previous_segment, current_segment;
-        int position = 0;
-
         robtop_map robtop;
 
-        auto split_string = explode(string, delimiter);
-
-        for (auto it = split_string.begin(); it != split_string.end(); ++it) {
-            // get position, check if odd (aka key)
-            if ((it - split_string.begin()) % 2 == 0) {
-                robtop.emplace(std::stoi(*it, nullptr), *std::next(it));
+        try
+        {
+            auto split_string = explode(string, delimiter);
+            if (split_string.empty())
+            {
+                GDRPC_LOG_ERROR("[GDRPC] failed to parse robtop format for value ({})", string.c_str());
+                return robtop;
             }
+            for (auto it = split_string.begin(); it != split_string.end(); ++it)
+            {
+                if ((it - split_string.begin()) % 2 == 0) // get position, check if odd (aka key)
+                {
+                    robtop.emplace(std::stoi(*it, nullptr), *std::next(it));
+                }
+            }
+        }
+        catch (std::exception& e)
+        {
+            GDRPC_LOG_ERROR("[GDRPC] failed to get parse robtop format, {}", e.what());
         }
 
         return robtop;
     }
 
-    // helper function
     std::vector<std::string> explode(
         std::string& string, 
         const char separator)
