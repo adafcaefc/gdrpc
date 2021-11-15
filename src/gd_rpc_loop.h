@@ -1,7 +1,6 @@
 #pragma once
 #include <gd.h>
 #undef snprintf
-#include <filesystem>
 #include "gd_rpc_config.h"
 #include "gd_rpc_api.h"
 
@@ -14,7 +13,8 @@ namespace rpc
         menu,
     };
 
-    class loop {
+    class loop 
+    {
     private:
         player_state state = player_state::menu;
         ::gd::GJGameLevel* game_level;
@@ -29,10 +29,12 @@ namespace rpc
 
         std::string large_text;
 
-        void update_presence_w(
-            std::string&, 
-            std::string&, std::string&,
-            std::string&, std::string&);
+        void update_discord_presence(
+            std::string& details,
+            std::string& large_text,
+            std::string& small_text,
+            std::string& state_text,
+            std::string& small_image);
 
         bool enabled = false;
 
@@ -71,19 +73,13 @@ namespace rpc
             return this->config._editor.at(folder).reset_timestamp;
         }
 
-        std::string get_executable_name()
-        {
-            char szFilePath[MAX_PATH + 1] = { 0 };
-            GetModuleFileNameA(NULL, szFilePath, MAX_PATH);
-            return std::filesystem::path(szFilePath).filename().string();
-        }
-
         void on_loop();
         void on_loop_level();
         void on_loop_editor();
         void on_loop_menu();
 
         void initialize_config();
+        void initialize_rank();
         void initialize_loop();
 
         void close();

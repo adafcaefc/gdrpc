@@ -41,31 +41,30 @@ namespace rpc
 		handlers.joinGame = handleDiscordJoinGame;
 		handlers.spectateGame = handleDiscordSpectateGame;
 		handlers.joinRequest = handleDiscordJoinRequest;
-
 		Discord_Initialize(application_id, &handlers, 1, "322170");
 	}
 
 	void discord::update(
 		const char* details,
-		const char* largeText,
-		const char* smallText,
-		const char* statetext,
-		const char* smallImage,
+		const char* large_text,
+		const char* small_text,
+		const char* state_text,
+		const char* small_image,
 		const std::time_t timestamp)
 	{
 		DiscordRichPresence instance;
 		std::memset(&instance, 0, sizeof(instance));
-		if (std::strlen(statetext) != 0) instance.state = statetext;
+		if (std::strlen(state_text) != 0) instance.state = state_text;
 
 		instance.details = details;
 		instance.startTimestamp = timestamp;
 		instance.largeImageKey = "logo";
-		instance.largeImageText = largeText;
+		instance.largeImageText = large_text;
 
-		if (std::strcmp(smallImage, "none") != 0)
+		if (std::strcmp(small_image, "none") != 0)
 		{
-			instance.smallImageKey = smallImage;
-			instance.smallImageText = smallText;
+			instance.smallImageKey = small_image;
+			instance.smallImageText = small_text;
 		}
 
 		Discord_UpdatePresence(&instance);

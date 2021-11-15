@@ -2,7 +2,7 @@
 #include "gd_rpc_loop.h"
 #include "gd_rpc_wrapper.h"
 #include "gd_rpc_api.h"
-#include "gd_rpc_log.h"
+#include "gd_rpc_settings.h"
 
 namespace rpc
 {
@@ -43,18 +43,18 @@ namespace rpc
         }
     }
 
-    void loop::update_presence_w(
+    void loop::update_discord_presence(
         std::string& details,
-        std::string& largeText,
-        std::string& smallText,
-        std::string& state,
-        std::string& smallImage)
+        std::string& large_text,
+        std::string& small_text,
+        std::string& state_text,
+        std::string& small_image)
     {
         GDRPC_LOG_INFO("[GDRPC] setting presence -> details: {} | state: {} | small_text: {} | large_text: {} | timestamp_update: {}", 
             details.c_str(), 
-            state.c_str(), 
-            smallText.c_str(), 
-            largeText.c_str(), 
+            state_text.c_str(),
+            small_text.c_str(),
+            large_text.c_str(),
             update_timestamp);
 
         if (this->update_timestamp)
@@ -65,27 +65,27 @@ namespace rpc
 
         discord::get()->update(
             details.c_str(),
-            largeText.c_str(), 
-            smallText.c_str(),
-            state.c_str(), 
-            smallImage.c_str(), 
+            large_text.c_str(),
+            small_text.c_str(),
+            state_text.c_str(),
+            small_image.c_str(),
             this->current_timestamp);
     }
 
     void loop::disable_discord() 
     {
         if (!this->enabled) return;
+        GDRPC_LOG_INFO("[GDRPC] rpc disabled!");
         this->enabled = false;
         discord::get()->shutdown();
-        GDRPC_LOG_INFO("[GDRPC] rpc disabled!");
     }
 
     void loop::enable_discord() 
     {
         if (this->enabled) return;
+        GDRPC_LOG_INFO("[GDRPC] rpc enabled!");
         this->enabled = true;
         discord::get()->init(this->config._settings.application_id.c_str());
-        GDRPC_LOG_INFO("[GDRPC] rpc enabled!");
     }
 
     void loop::close()
@@ -96,7 +96,7 @@ namespace rpc
 
     DWORD WINAPI loop::main_thread(LPVOID lpParam) 
     {
-        while (!tm_settings::get()->gd_rpc_enable.active) 
+        while (!GDRPC_ENABLED)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
         }
@@ -109,11 +109,11 @@ namespace rpc
             }
             catch (const std::exception& e)
             {
-                GDRPC_LOG_ERROR("[GDRPC] failed to do loop, {}", e.what());
+                GDRPC_LOG_ERROR("[GDRPC] failed to do on_loop, {}", e.what());
             }
             catch (...) 
             {
-                GDRPC_LOG_ERROR("[GDRPC] failed to do loop, unknown exception");
+                GDRPC_LOG_ERROR("[GDRPC] failed to do on_loop, unknown exception");
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
@@ -145,101 +145,95 @@ namespace rpc
         }
     }
 
-    void loop::initialize_loop()
-    {
-        gd_user user;
-        large_text = this->config._user._default;
+    void loop::initialize_rank()
+    {  
         const auto account_id = ::gd::GJAccountManager::sharedState()->m_nPlayerAccountID;
-        
-        if (this->config._user.get_rank) 
+        GDRPC_LOG_INFO("[GDRPC] getting infomation for user {}", account_id);
+        gd_user user;
+        gd_client client(
+            this->config._settings.base_url,
+            this->config._settings.url_prefix);
+        try
         {
-            GDRPC_LOG_INFO("[GDRPC] getting infomation for user {}", account_id);
-            gd_client client(
-                this->config._settings.base_url,
-                this->config._settings.url_prefix);
-            try 
-            {
-                bool success = client.get_user_info(account_id, user);
-                if (success) client.get_user_rank(user);
-            }
-            catch (const std::exception& e) 
-            {
-                GDRPC_LOG_ERROR("[GDRPC] failed to get infomation, {}", e.what());
-            }
+            bool success = client.get_user_info(account_id, user);
+            if (success) client.get_user_rank(user);
+        }
+        catch (const std::exception& e)
+        {
+            GDRPC_LOG_ERROR("[GDRPC] failed to get infomation, {}", e.what());
         }
 
-        if (user.rank != -1) 
+        if (user.rank != -1)
         {
             this->large_text = fmt::format(
-                this->config._user.ranked, 
-                fmt::arg("name", user.name), 
+                this->config._user.ranked,
+                fmt::arg("name", user.name),
                 fmt::arg("rank", user.rank));
         }
-        else 
+        else
         {
             auto username = ::gd::GJAccountManager::sharedState()->getUsername();
             large_text = std::string(username);
         }
+    }
 
-        update_presence = true;
-        update_timestamp = true;
+    void loop::initialize_loop()
+    {
+        large_text = this->config._user._default;
+        if (this->config._user.get_rank) this->initialize_rank();
+        this->update_presence = true;
+        this->update_timestamp = true;
     }
 
     void loop::on_loop_level()
     {
-        std::string details, s_state, small_text, small_image;
+        std::string details, state_text, small_text, small_image;
         parse_game_level(this->game_level, this->level);
-        auto level_location = this->game_level->levelType;
-
+        const auto level_location = this->game_level->levelType;
         auto folder = static_cast<size_t>(this->game_level->levelFolder);
         if (folder >= this->config._level.size()) folder = 0;
-
         if (level_location == gd::GJLevelType::kGJLevelTypeEditor)
         {
-            auto playtesting = this->config._level.at(folder).playtesting;
+            const auto playtesting = this->config._level.at(folder).playtesting;
             details = format_with_level(playtesting.detail, this->level, this->game_level);
-            s_state = format_with_level(playtesting.state, this->level, this->game_level);
+            state_text = format_with_level(playtesting.state, this->level, this->game_level);
             small_text = format_with_level(playtesting.smalltext, this->level, this->game_level);
             small_image = "creator_point";
         }
         else
         {
-            auto saved = this->config._level.at(folder).saved;
+            const auto saved = this->config._level.at(folder).saved;
             details = format_with_level(saved.detail, this->level, this->game_level);
-            s_state = format_with_level(saved.state, this->level, this->game_level);
+            state_text = format_with_level(saved.state, this->level, this->game_level);
             small_text = format_with_level(saved.smalltext, this->level, this->game_level);
             small_image = gd_client::get_difficulty_name(this->level);
         }
-        this->update_presence_w(details, large_text, small_text, s_state, small_image);
+        this->update_discord_presence(details, large_text, small_text, state_text, small_image);
     }
 
     void loop::on_loop_editor()
     {
-        std::string details, s_state, small_text, small_image;
-
+        std::string details, state_text, small_text, small_image;
         parse_game_level(this->game_level, this->level);
         auto folder = static_cast<size_t>(this->game_level->levelFolder);
         if (folder >= this->config._editor.size()) folder = 0;
         auto editor = this->config._editor.at(folder);
         details = format_with_level(editor.detail, level, this->game_level);
-        s_state = format_with_level(editor.state, level, this->game_level);
+        state_text = format_with_level(editor.state, level, this->game_level);
         small_text = format_with_level(editor.smalltext, level, this->game_level);
         small_image = "creator_point";
-
-        this->update_presence_w(details, large_text, small_text, s_state, small_image);
+        this->update_discord_presence(details, large_text, small_text, state_text, small_image);
     }
 
     void loop::on_loop_menu()
     {
-        std::string details, s_state, small_text, small_image;
-
+        std::string details, state_text, small_text, small_image;
         auto menu = this->config._menu;
         details = menu.detail;
-        s_state = menu.state;
+        state_text = menu.state;
         small_text = menu.smalltext;
         small_image = std::string();
-
-        this->update_presence_w(details, large_text, small_text, s_state, small_image);
+        this->update_discord_presence(details, large_text, small_text, state_text, small_image);
     }
 
     void loop::on_loop()

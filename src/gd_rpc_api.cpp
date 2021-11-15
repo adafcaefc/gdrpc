@@ -2,7 +2,7 @@
 #include "gd_rpc_api.h"
 #include "gd_rpc_curl_utils.h"
 #include "gd_rpc_config.h"
-#include "gd_rpc_log.h"
+#include "gd_rpc_settings.h"
 #include <gd.h>
 #undef snprintf
 
@@ -98,7 +98,7 @@ namespace rpc
         my_params.emplace("gameVersion", std::to_string(game_version));
         my_params.emplace("secret", secret);
         const auto result = post_http_request(host + prefix + endpoint, params_to_string(my_params));
-        if (result.empty()) return std::string("-1");
+        if (result.empty()) return std::string("-1"); // failed request
         return result;
     }
 
@@ -179,29 +179,25 @@ namespace rpc
         ::gd::GJGameLevel* in_memory, 
         gd_level& level) 
     {
-        auto newID = in_memory->levelID;
-        auto levelLocation = in_memory->levelType;
+        auto new_id = in_memory->levelID;
+        auto level_location = in_memory->levelType;
 
-        // don't calculate more than we have to, but the editor keeps id 0
-        if (newID == level.level_id && levelLocation != ::gd::GJLevelType::kGJLevelTypeEditor)
+        if (new_id == level.level_id &&
+            level_location != ::gd::GJLevelType::kGJLevelTypeEditor)
         {
             return true;
         }
 
-        level.level_id = newID;
+        level.level_id = new_id;
         level.stars = in_memory->stars;
-
         level.name = in_memory->levelName;
-
-        // good robtop security
         level.is_demon = static_cast<bool>(in_memory->demon);
         level.is_auto = in_memory->autoLevel;
 
-        if (levelLocation == 1) 
+        if (level_location == ::gd::GJLevelType::kGJLevelTypeLocal)
         {
-            level.author = "RobTop"; // author is "" on these
+            level.author = "RobTop"; // author is empty on local levels
             level.difficulty = static_cast<gdx::difficulty>(in_memory->difficulty);
-
             if (level.difficulty == gdx::difficulty::Demon)
             {
                 level.demon_difficulty = gdx::demon::Easy;
@@ -211,7 +207,6 @@ namespace rpc
         {
             level.author = in_memory->userName;
             level.difficulty = static_cast<gdx::difficulty>(in_memory->ratingsSum / 10);
-
             if (level.is_demon) 
             {
                 level.demon_difficulty = gd_client::get_demon_difficulty_value(in_memory->demonDifficulty);
@@ -256,15 +251,10 @@ namespace rpc
         std::string& string, 
         const char separator)
     {
-        std::stringstream segmentstream(string);
-        std::string segmented;
-        std::vector<std::string> splitlist;
-
-        while (std::getline(segmentstream, segmented, separator)) 
-        {
-            splitlist.push_back(segmented);
-        }
-
-        return splitlist;
+        std::stringstream stream(string);
+        std::string segment;
+        std::vector<std::string> list;
+        while (std::getline(stream, segment, separator)) list.push_back(segment);
+        return list;
     }
 }
