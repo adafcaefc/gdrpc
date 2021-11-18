@@ -28,13 +28,13 @@ namespace rpc
         }
     }
 
-    std::string gd_client::get_difficulty_name(gd_level& level) 
+    std::string gd_client::get_difficulty_name(gd_level& level)
     {
         if (level.is_auto) return "auto";
 
-        if (level.is_demon) 
+        if (level.is_demon)
         {
-            switch (level.demon_difficulty) 
+            switch (level.demon_difficulty)
             {
             case gdx::demon::Easy:
                 return "easy_demon";
@@ -50,7 +50,7 @@ namespace rpc
             }
         }
 
-        switch (level.difficulty) 
+        switch (level.difficulty)
         {
         case gdx::difficulty::Easy:
             return "easy";
@@ -82,7 +82,7 @@ namespace rpc
     }
 
     std::string gd_client::post_request(
-        const std::string& endpoint, 
+        const std::string& endpoint,
         params& my_params)
     {
         const auto params_to_string = [](params& all_params)-> std::string
@@ -104,12 +104,17 @@ namespace rpc
 
     bool gd_client::get_user_info(
         int account_id,
-        gd_user& user) 
+        gd_user& user)
     {
         params _params({ { "targetAccountID", std::to_string(account_id) } });
         auto user_string = gd_client::post_request(urls.get_user_info, _params);
+        if (user_string == "-1" || user_string.empty() || user_string.length() <= 2)
+        {
+            GDRPC_LOG_ERROR("[GDRPC] failed to fetch user info, {}", user_string.c_str());
+            return false;
+        }
 
-        try 
+        try
         {
             auto user_map = to_robtop(user_string);
             user.name = user_map.at(1);
@@ -117,21 +122,26 @@ namespace rpc
             user.account_id = std::stoi(user_map.at(16), nullptr);
             return true;
         }
-        catch (const std::exception& e) 
+        catch (const std::exception& e)
         {
             GDRPC_LOG_ERROR("[GDRPC] failed to get user info, {}", e.what());
+            return false;
         }
-        return false;
     }
 
     bool gd_client::get_player_info(
-        const int player_id, 
-        gd_user& user) 
+        const int player_id,
+        gd_user& user)
     {
         params _params({ { "str", std::to_string(player_id) } });
         auto player_string = gd_client::post_request(urls.get_users, _params);
+        if (player_string == "-1" || player_string.empty() || player_string.length() <= 2)
+        {
+            GDRPC_LOG_ERROR("[GDRPC] failed to fetch player info, {}", player_string.c_str());
+            return false;
+        }
 
-        try 
+        try
         {
             auto user_map = to_robtop(player_string);
             user.name = user_map.at(1);
@@ -139,45 +149,63 @@ namespace rpc
             user.account_id = std::stoi(user_map.at(16), nullptr);
             return true;
         }
-        catch (const std::exception& e) 
+        catch (const std::exception& e)
         {
             GDRPC_LOG_ERROR("[GDRPC] failed to get player info, {}", e.what());
+            return false;
         }
-        return false;
     }
 
-    bool gd_client::get_user_rank(gd_user& user) 
+    bool gd_client::get_user_rank(gd_user& user)
     {
         params _params({ { "type", "relative" }, { "accountID", std::to_string(user.account_id) } });
         auto result = post_request(urls.get_scores, _params);
-
-        auto leaderboard_list = explode(result, '|');
-
-        bool found_user = false;
-        robtop_map seglist;
-
-        if (leaderboard_list.size() >= 24)
+        if (result == "-1" || result.empty() || result.length() <= 2)
         {
-            seglist = to_robtop(leaderboard_list.at(24));
-            found_user = (std::stoi(seglist.at(16), nullptr) == user.account_id);
+            GDRPC_LOG_ERROR("[GDRPC] failed to fetch user rank, {}", result.c_str());
+            return false;
         }
 
-        if (!found_user)
+        try
         {
-            std::string lookup_string = ":16:" + std::to_string(user.account_id) + ":";
-            const auto routine = [&lookup_string](std::string& entry) { return (entry.find(lookup_string) != std::string::npos); };
-            auto player_entry = std::find_if(leaderboard_list.begin(), leaderboard_list.end(), routine);
-            if (player_entry == leaderboard_list.end()) user.rank = -1;
-            seglist = to_robtop(*player_entry);
-        }
+            auto leaderboard_list = explode(result, '|');
+            if (leaderboard_list.empty())
+            {
+                GDRPC_LOG_ERROR("[GDRPC] failed to fetch user rank, {}", result.c_str());
+                return false;
+            }
 
-        user.rank = std::stoi(seglist.at(6), nullptr);
-        return true;
+            bool found_user = false;
+            robtop_map seglist;
+
+            if (leaderboard_list.size() >= 24)
+            {
+                seglist = to_robtop(leaderboard_list.at(24));
+                found_user = (std::stoi(seglist.at(16), nullptr) == user.account_id);
+            }
+
+            if (!found_user)
+            {
+                std::string lookup_string = ":16:" + std::to_string(user.account_id) + ":";
+                const auto routine = [&lookup_string](std::string& entry) { return (entry.find(lookup_string) != std::string::npos); };
+                auto player_entry = std::find_if(leaderboard_list.begin(), leaderboard_list.end(), routine);
+                if (player_entry == leaderboard_list.end()) user.rank = -1;
+                seglist = to_robtop(*player_entry);
+            }
+
+            user.rank = std::stoi(seglist.at(6), nullptr);
+            return true;
+        }
+        catch (std::exception& e)
+        {
+            GDRPC_LOG_ERROR("[GDRPC] failed to get player info, {}", e.what());
+            return false;
+        }
     }
 
     bool parse_game_level(
-        ::gd::GJGameLevel* in_memory, 
-        gd_level& level) 
+        ::gd::GJGameLevel* in_memory,
+        gd_level& level)
     {
         auto new_id = in_memory->levelID;
         auto level_location = in_memory->levelType;
@@ -203,11 +231,11 @@ namespace rpc
                 level.demon_difficulty = gdx::demon::Easy;
             }
         }
-        else 
+        else
         {
             level.author = in_memory->userName;
             level.difficulty = static_cast<gdx::difficulty>(in_memory->ratingsSum / 10);
-            if (level.is_demon) 
+            if (level.is_demon)
             {
                 level.demon_difficulty = gd_client::get_demon_difficulty_value(in_memory->demonDifficulty);
             }
@@ -216,7 +244,7 @@ namespace rpc
     }
 
     robtop_map to_robtop(
-        std::string& string, 
+        std::string& string,
         const char delimiter)
     {
         std::stringstream segments(string);
@@ -248,7 +276,7 @@ namespace rpc
     }
 
     std::vector<std::string> explode(
-        std::string& string, 
+        std::string& string,
         const char separator)
     {
         std::stringstream stream(string);
