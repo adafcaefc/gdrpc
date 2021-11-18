@@ -131,7 +131,7 @@ namespace rpc
     {
         params _params({ { "str", std::to_string(player_id) } });
         auto player_string = gd_client::post_request(urls.get_users, _params);
-        if (user_string == "-1") return false;
+        if (player_string == "-1") return false;
 
         try 
         {
@@ -152,7 +152,7 @@ namespace rpc
     {
         params _params({ { "type", "relative" }, { "accountID", std::to_string(user.account_id) } });
         auto result = post_request(urls.get_scores, _params);
-        if (user_string == "-1") return false;
+        if (result == "-1") return false;
 
         auto leaderboard_list = explode(result, '|');
 
