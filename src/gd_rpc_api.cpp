@@ -108,7 +108,8 @@ namespace rpc
     {
         params _params({ { "targetAccountID", std::to_string(account_id) } });
         auto user_string = gd_client::post_request(urls.get_user_info, _params);
-
+        if (user_string == "-1") return false;
+        
         try 
         {
             auto user_map = to_robtop(user_string);
@@ -130,6 +131,7 @@ namespace rpc
     {
         params _params({ { "str", std::to_string(player_id) } });
         auto player_string = gd_client::post_request(urls.get_users, _params);
+        if (user_string == "-1") return false;
 
         try 
         {
@@ -150,6 +152,7 @@ namespace rpc
     {
         params _params({ { "type", "relative" }, { "accountID", std::to_string(user.account_id) } });
         auto result = post_request(urls.get_scores, _params);
+        if (user_string == "-1") return false;
 
         auto leaderboard_list = explode(result, '|');
 
